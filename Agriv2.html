@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgriManager Premium</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+:root { --primary: #2d6a4f; --accent: #ba1a1a; --cash: #0288d1; --credit: #e65100; --bg-gradient: linear-gradient(180deg, #f7ce68 0%, #fcfaf2 35%, #f4f6f4 100%); --card-shadow: 0 4px 15px rgba(0, 0, 0, 0.03); --card-bg: rgba(255, 255, 255, 0.92); --text: #212529; --text-muted: #6c757d; --border: rgba(0, 0, 0, 0.04); }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-gradient); background-attachment: fixed; min-height: 100vh; margin: 0; padding: 10px 0; color: var(--text); display: flex; flex-direction: column; align-items: center; }
+main { width: 100%; max-width: 480px; padding: 0 8px; box-sizing: border-box; }
+.nav-container { width: calc(100% - 16px); max-width: 464px; background: rgba(255, 255, 255, 0.6); backdrop-filter: blur(10px); padding: 3px; border-radius: 16px; display: flex; box-shadow: 0 2px 8px rgba(0,0,0,0.02); border: 1px solid rgba(255, 255, 255, 0.5); margin-bottom: 12px; }
+.tab-btn { flex: 1; padding: 9px 4px; text-align: center; background: none; border: none; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); border-radius: 12px; transition: all 0.2s ease; cursor: pointer; }
+.tab-btn.active { background: #ffffff; color: var(--primary); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05); }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.totals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.total-card { background: var(--card-bg); padding: 12px 8px; border-radius: 14px; text-align: center; box-shadow: var(--card-shadow); border: 1px solid var(--border); }
+.total-title { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); margin-bottom: 2px; }
+.total-amount { font-size: 1.15rem; font-weight: 700; }
+.total-card.cash .total-amount { color: var(--cash); }
+.total-card.credit .total-amount { color: var(--credit); }
+.card { background: var(--card-bg); border-radius: 18px; padding: 14px; margin-bottom: 12px; box-shadow: var(--card-shadow); border: 1px solid var(--border); }
+.card-title { margin: 0 0 12px 0; font-size: 0.95rem; font-weight: 700; color: var(--primary); }
+.form-group { margin-bottom: 10px; }
+label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.78rem; color: var(--text-muted); }
+input, select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: 10px; box-sizing: border-box; font-size: 0.88rem; color: var(--text); background-color: rgba(248, 249, 250, 0.7); transition: all 0.2s; }
+input:focus, select:focus { outline: none; border-color: var(--primary); background-color: #ffffff; box-shadow: 0 0 0 3px rgba(45, 106, 79, 0.08); }
+.btn-container { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.btn { color: white; border: none; padding: 11px; font-size: 0.88rem; font-weight: 700; border-radius: 10px; cursor: pointer; transition: transform 0.1s; display: flex; align-items: center; justify-content: center; gap: 4px; }
+.btn-cash { background: var(--cash); }
+.btn-credit { background: var(--credit); }
+.btn-payback { background: #4a5568; grid-column: span 2; margin-top: 4px; }
+.btn-primary { background: var(--primary); width: 100%; margin-top: 5px; }
+.btn-secondary { background: #4f5d75; width: 100%; font-size: 0.8rem; padding: 8px;}
+.btn-light { background: #ffffff; color: var(--text); border: 1px solid var(--border); font-size: 0.8rem; padding: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.02); }
+.btn:active { transform: scale(0.98); }
+.filter-row { display: flex; gap: 6px; margin-bottom: 8px; }
+.filter-row input, .filter-row select { padding: 8px; font-size: 0.8rem; border-radius: 8px; background: #ffffff; }
+.expense-list { list-style: none; padding: 0; margin: 0; }
+.expense-item { background: transparent; border-bottom: 1px solid var(--border); padding: 10px 2px; display: flex; justify-content: space-between; align-items: center; }
+.expense-item:last-child { border-bottom: none; }
+.item-left { display: flex; flex-direction: column; gap: 2px; }
+.item-cat-row { display: flex; align-items: center; gap: 6px; }
+.item-cat { font-weight: 700; font-size: 0.88rem; }
+.badge { padding: 1px 5px; border-radius: 4px; color: white; font-size: 0.6rem; font-weight: 700; }
+.badge-espèces { background: var(--cash); }
+.badge-crédit { background: var(--credit); }
+.badge-remboursement { background: #4a5568; }
+.item-sub { font-size: 0.75rem; color: var(--text-muted); font-weight: 500; }
+.item-desc { font-size: 0.78rem; color: #495057; font-style: italic; }
+.item-right { text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.item-amount { font-weight: 700; font-size: 0.95rem; color: var(--accent); }
+.item-amount.payback-amt { color: #2d6a4f; }
+.action-btns button { background: none; border: none; font-size: 0.75rem; font-weight: 600; margin-left: 8px; padding: 2px; cursor: pointer; }
+.edit-btn { color: var(--primary); }
+.delete-btn { color: var(--accent); }
+.summary-box { background: rgba(45, 106, 79, 0.05); padding: 10px 12px; border-radius: 14px; margin-bottom: 12px; border: 1px solid rgba(45, 106, 79, 0.08); }
+.summary-title { font-weight: 700; color: var(--primary); font-size: 0.75rem; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.3px;}
+.summary-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 0.82rem; border-bottom: 1px dashed rgba(0,0,0,0.04); }
+.summary-row:last-child { border-bottom: none; font-weight: 700; color: var(--accent); margin-top: 4px; font-size: 0.88rem; }
+.doc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+.doc-card { background: #ffffff; border-radius: 12px; padding: 6px; border: 1px solid var(--border); position: relative; box-shadow: 0 2px 6px rgba(0,0,0,0.02); }
+.doc-img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; cursor: pointer; }
+.doc-info { padding: 4px 2px; display: flex; flex-direction: column; }
+.doc-text { font-size: 0.75rem; color: var(--text); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-date { font-size: 0.68rem; color: var(--text-muted); }
+.doc-del { position: absolute; top: 10px; right: 10px; background: rgba(186, 26, 26, 0.85); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+/* Styles Accueil / Hub */
+.hub-container { text-align: center; padding: 20px 10px; margin-top: 30px; }
+.hub-title { font-size: 1.5rem; font-weight: 800; color: var(--primary); margin-bottom: 5px; }
+.hub-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 35px; font-weight: 500; }
+.hub-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+.hub-btn { background: #ffffff; border: 1px solid var(--border); border-radius: 24px; padding: 30px 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.04); cursor: pointer; transition: all 0.2s ease; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.hub-btn:active { transform: scale(0.97); box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
+.hub-icon { font-size: 2.5rem; }
+.hub-btn-title { font-size: 1.1rem; font-weight: 700; color: var(--text); }
+.hub-btn-desc { font-size: 0.78rem; color: var(--text-muted); max-width: 220px; line-height: 1.3; }
+.hub-btn.tech-btn { border-left: 5px solid #4a5568; }
+.hub-btn.fin-btn { border-left: 5px solid var(--primary); }
+.back-home-btn { background: rgba(0,0,0,0.05); color: var(--text); border: none; padding: 6px 12px; font-size: 0.75rem; font-weight: 700; border-radius: 8px; cursor: pointer; margin-bottom: 12px; align-self: flex-start; margin-left: 8px; }
+</style>
+</head>
+<body>
+<main>
+    <div id="appHub" class="tab-content active">
+        <div class="hub-container">
+            <div class="hub-title">🚜 اللهم يسر</div>
+            <div class="hub-subtitle">Système Global de Gestion d'Exploitation</div>
+            <div class="hub-grid">
+                <button class="hub-btn fin-btn" onclick="enterModule('financier')">
+                    <span class="hub-icon">💰</span>
+                    <span class="hub-btn-title">Accès Financier</span>
+                    <span class="hub-btn-desc">Gestion des charges, suivi du crédit fournisseur, règlements espèces & archivage documents.</span>
+                </button>
+                <button class="hub-btn tech-btn" onclick="enterModule('technique')">
+                    <span class="hub-icon">🌾</span>
+                    <span class="hub-btn-title">Accès Technique</span>
+                    <span class="hub-btn-desc">Suivi des parcelles, calendriers des traitements, intrants, main d'œuvre et rendements.</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="moduleTechnique" class="tab-content">
+        <button class="back-home-btn" onclick="showHub()">⬅ Retour Accueil</button>
+        <div class="card" style="text-align:center; padding:40px 20px;">
+            <span style="font-size:3rem;">⚙️</span>
+            <h3 class="card-title" style="margin-top:15px;">Accès Technique</h3>
+            <p style="font-size:0.85rem; color:var(--text-muted); line-height:1.5;">Ce module est en cours de configuration.<br>Il permettra prochainement de piloter vos cultures, suivis agronomiques et récoltes.</p>
+        </div>
+    </div>
+
+    <div id="moduleFinancier" class="tab-content">
+        <button class="back-home-btn" onclick="showHub()">⬅ Retour Accueil</button>
+        <div class="nav-container">
+            <button class="tab-btn active" id="btn-saisie" onclick="switchTab('saisie')">Saisie</button>
+            <button class="tab-btn" id="btn-historique" onclick="switchTab('historique')">Historique</button>
+            <button class="tab-btn" id="btn-docs" onclick="switchTab('docs')">Documents</button>
+        </div>
+        
+        <div id="saisie" class="inner-tab-content active">
+            <div class="totals-grid">
+                <div class="total-card cash"><div class="total-title">💵 ESPÈCES</div><div class="total-amount" id="dashCash">0.00 Dhs</div></div>
+                <div class="total-card credit"><div class="total-title">💳 À CRÉDIT</div><div class="total-amount" id="dashCredit">0.00 Dhs</div></div>
+            </div>
+            <div class="card">
+                <h3 class="card-title" id="formTitle">Nouvelle transaction</h3>
+                <form id="chargeForm">
+                    <input type="hidden" id="editId" value="">
+                    <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-bottom:12px;background:rgba(0,0,0,0.02);padding:6px;border-radius:8px;">
+                        <input type="checkbox" id="isPayback" onchange="togglePaybackMode()" style="width:auto;cursor:pointer;">
+                        <label for="isPayback" style="margin-bottom:0;cursor:pointer;color:var(--text);font-weight:700;">🔄 C'est un remboursement de crédit</label>
+                    </div>
+                    <div class="form-group" id="catGroup">
+                        <label for="categorySelect">Catégorie / Fournisseur</label>
+                        <select id="categorySelect" onchange="toggleField('categorySelect', 'newCatName')"></select>
+                        <input type="text" id="newCatName" placeholder="Nom du fournisseur ou catégorie..." style="display:none;margin-top:5px;">
+                    </div>
+                    <div class="form-group"><label for="amount">Montant (Dhs)</label><input type="number" id="amount" step="0.01" placeholder="0.00" required></div>
+                    <div class="form-group"><label for="date">Date</label><input type="date" id="date" required></div>
+                    <div class="form-group"><label for="description">Note / Détails</label><input list="noteList" id="description" placeholder="Ex: Avance ouvrier..."><datalist id="noteList"></datalist></div>
+                    <div class="form-group" id="cultureGroup">
+                        <label for="cultureSelect">Parcelle / Culture</label>
+                        <select id="cultureSelect" onchange="toggleField('cultureSelect', 'newCultureName')"></select>
+                        <input type="text" id="newCultureName" placeholder="Nom de la nouvelle parcelle..." style="display:none;margin-top:5px;">
+                    </div>
+                    <div class="btn-container" id="normalButtons">
+                        <button type="button" id="btnCashAction" class="btn btn-cash" onclick="submitForm('espèces')">Espèces</button>
+                        <button type="button" id="btnCreditAction" class="btn btn-credit" onclick="submitForm('crédit')">À Crédit</button>
+                        <button type="button" id="btnPaybackAction" class="btn btn-payback" onclick="submitForm('remboursement')" style="display:none;">Confirmer le remboursement</button>
+                    </div>
+                    <div id="editButtons" style="display:none;margin-top:10px;">
+                        <button type="button" class="btn" style="background:#6c757d;width:100%;margin-bottom:5px;" onclick="cancelEdit()">Annuler</button>
+                        <button type="button" class="btn btn-cash" style="width:100%;" id="saveEditBtn">Confirmer</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        
+        <div id="historique" class="inner-tab-content" style="display:none;">
+            <div class="card" style="padding:10px; margin-bottom:10px;">
+                <div class="filter-row"><input type="date" id="filterStartDate" onchange="updateHistoryUI()"><input type="date" id="filterEndDate" onchange="updateHistoryUI()"></div>
+                <div class="filter-row">
+                    <select id="filterType" onchange="updateHistoryUI()"><option value="tous">Tous paiements</option><option value="espèces">Espèces</option><option value="crédit">Crédit</option><option value="remboursement">Remboursements</option></select>
+                    <select id="filterCategory" onchange="updateHistoryUI()"><option value="toutes">Toutes rubriques</option></select>
+                </div>
+                <div class="filter-row"><select id="filterCulture" onchange="updateHistoryUI()"><option value="toutes">Toutes parcelles</option></select></div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:5px;">
+                    <button class="btn btn-secondary" onclick="exportToExcel()">📥 Sauvegarder Excel</button>
+                    <button class="btn btn-light" onclick="document.getElementById('importFile').click()">📤 Restaurer Excel</button>
+                    <input type="file" id="importFile" accept=".xlsx" style="display:none;" onchange="importFromExcel(event)">
+                </div>
+            </div>
+            <div class="summary-box"><div id="rubricBreakdown"></div></div>
+            <div class="card" style="padding:10px 14px;"><ul class="expense-list" id="expenseList"></ul></div>
+        </div>
+        
+        <div id="docs" class="inner-tab-content" style="display:none;">
+            <div class="card">
+                <h3 class="card-title">Ajouter un document (Image/Reçu)</h3>
+                <form id="docForm" onsubmit="saveDocument(event)">
+                    <div class="form-group"><label for="docFile">Sélectionner ou Capturer Image</label><input type="file" id="docFile" accept="image/*" required></div>
+                    <div class="form-group"><label for="docDate">Date</label><input type="date" id="docDate" required></div>
+                    <div class="form-group"><label for="docDesc">Description</label><input type="text" id="docDesc" placeholder="Ex: Facture engrais, Bon livraison..." required></div>
+                    <button type="submit" class="btn btn-primary">Enregistrer l'image</button>
+                </form>
+            </div>
+            <div class="doc-grid" id="documentGrid"></div>
+        </div>
+    </div>
+</main>
+<script>
+let expenses = JSON.parse(localStorage.getItem('agri_exp_v2')) || [];
+let catsList = JSON.parse(localStorage.getItem('agri_cats_list')) || ["Main d'œuvre", "Semences", "Carburant", "Matériel", "Autre"];
+let cultsList = JSON.parse(localStorage.getItem('agri_cults_list')) || ["Général / Non défini"];
+let notesList = JSON.parse(localStorage.getItem('agri_notes_list')) || [];
+let db;
+document.getElementById('date').value = new Date().toISOString().split('T')[0];
+document.getElementById('docDate').value = new Date().toISOString().split('T')[0];
+const request = indexedDB.open("AgriDocsDB", 1);
+request.onupgradeneeded = function(e) { db = e.target.result; if(!db.objectStoreNames.contains("images")) { db.createObjectStore("images", { keyPath: "id", autoIncrement: true }); } };
+request.onsuccess = function(e) { db = e.target.result; loadDocuments(); };
+
+function enterModule(mod) {
+    document.getElementById('appHub').style.display = 'none';
+    if(mod === 'financier') { document.getElementById('moduleFinancier').style.display = 'block'; switchTab('saisie'); }
+    else { document.getElementById('moduleTechnique').style.display = 'block'; }
+}
+function showHub() {
+    document.getElementById('moduleFinancier').style.display = 'none';
+    document.getElementById('moduleTechnique').style.display = 'none';
+    document.getElementById('appHub').style.display = 'block';
+}
+function switchTab(tabId) {
+    document.querySelectorAll('.inner-tab-content').forEach(e => e.style.display = (e.id === tabId) ? 'block' : 'none');
+    document.getElementById('btn-saisie').classList.toggle('active', tabId === 'saisie');
+    document.getElementById('btn-historique').classList.toggle('active', tabId === 'historique');
+    document.getElementById('btn-docs').classList.toggle('active', tabId === 'docs');
+}
+function refreshDropdowns() {
+    const catSel = document.getElementById('categorySelect'), cultSel = document.getElementById('cultureSelect'), fCat = document.getElementById('filterCategory'), fCult = document.getElementById('filterCulture');
+    const curCat = catSel.value, curCult = cultSel.value, curFCat = fCat.value, curFCult = fCult.value;
+    catSel.innerHTML = ''; catsList.forEach(c => catSel.innerHTML += `<option value="${c}">${c}</option>`); catSel.innerHTML += '<option value="__NEW__">+ Ajouter...</option>';
+    fCat.innerHTML = '<option value="toutes">Toutes rubriques</option>'; catsList.forEach(c => fCat.innerHTML += `<option value="${c}">${c}</option>`);
+    cultSel.innerHTML = ''; cultsList.forEach(c => cultSel.innerHTML += `<option value="${c}">${c}</option>`); cultSel.innerHTML += '<option value="__NEW__">+ Ajouter...</option>';
+    fCult.innerHTML = '<option value="toutes">Toutes parcelles</option>'; cultsList.forEach(c => fCult.innerHTML += `<option value="${c}">${c}</option>`);
+    if(curCat) catSel.value = curCat; if(curCult) cultSel.value = curCult; if(curFCat) fCat.value = curFCat; if(curFCult) fCult.value = curFCult;
+    document.getElementById('noteList').innerHTML = notesList.map(n => `<option value="${n}">`).join('');
+}
+function toggleField(selId, inpId) { document.getElementById(inpId).style.display = (document.getElementById(selId).value === '__NEW__') ? 'block' : 'none'; }
+function togglePaybackMode() {
+    const isPayback = document.getElementById('isPayback').checked;
+    document.getElementById('cultureGroup').style.display = isPayback ? 'none' : 'block';
+    document.getElementById('btnCashAction').style.display = isPayback ? 'none' : 'block';
+    document.getElementById('btnCreditAction').style.display = isPayback ? 'none' : 'block';
+    document.getElementById('btnPaybackAction').style.display = isPayback ? 'block' : 'none'; }
+function submitForm(typePaiement) {
+    let cat = document.getElementById('categorySelect').value, cult = document.getElementById('cultureSelect').value;
+    if(document.getElementById('isPayback').checked) { cat = cat || "Remboursement"; cult = "Général / Non défini"; }
+    else {
+        if(cat === '__NEW__') { cat = document.getElementById('newCatName').value.trim(); if(!cat) { alert("Nom requis"); return; } if(!catsList.includes(cat)) { catsList.push(cat); localStorage.setItem('agri_cats_list', JSON.stringify(catsList)); } }
+        if(cult === '__NEW__') { cult = document.getElementById('newCultureName').value.trim(); if(!cult) { alert("Nom requis"); return; } if(!cultsList.includes(cult)) { cultsList.push(cult); localStorage.setItem('agri_cults_list', JSON.stringify(cultsList)); } }
+    }
+    const note = document.getElementById('description').value.trim(); if(note && !notesList.includes(note)) { notesList.push(note); localStorage.setItem('agri_notes_list', JSON.stringify(notesList)); }
+    const amt = parseFloat(document.getElementById('amount').value), dt = document.getElementById('date').value, editId = document.getElementById('editId').value; if(!amt || !dt) return;
+    if(editId) { const idx = expenses.findIndex(e => e.id == editId); if(idx !== -1) expenses[idx] = { id: parseInt(editId), category:cat, amount:amt, date:dt, description:note, type: typePaiement, culture: cult }; cancelEdit(); }
+    else { expenses.push({ id: Date.now(), category:cat, amount:amt, date:dt, description:note, type: typePaiement, culture: cult }); }
+    localStorage.setItem('agri_exp_v2', JSON.stringify(expenses)); document.getElementById('chargeForm').reset(); document.getElementById('date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('newCatName').style.display = 'none'; document.getElementById('newCultureName').style.display = 'none'; document.getElementById('isPayback').checked = false; togglePaybackMode(); refreshDropdowns(); updateDashUI(); updateHistoryUI();
+}
+function updateHistoryUI() {
+    const start = document.getElementById('filterStartDate').value, end = document.getElementById('filterEndDate').value, type = document.getElementById('filterType').value, fCat = document.getElementById('filterCategory').value, fCult = document.getElementById('filterCulture').value, list = document.getElementById('expenseList'), brk = document.getElementById('rubricBreakdown');
+    if(!list) return; list.innerHTML = ''; let rubrics = {}, cults = {}, gTotal = 0;
+    const filtered = expenses.filter(e => { if (start && e.date < start) return false; if (end && e.date > end) return false; if (type !== 'tous' && e.type !== type) return false; if (fCat !== 'toutes' && e.category !== fCat) return false; if (fCult !== 'toutes' && (e.culture || 'Général / Non défini') !== fCult) return false; return true; }).sort((a,b) => b.date.localeCompare(a.date) || b.id - a.id);
+    filtered.forEach(e => { 
+        if(e.type !== 'remboursement') { gTotal += e.amount; rubrics[e.category] = (rubrics[e.category] || 0) + e.amount; const pName = e.culture || 'Général / Non défini'; cults[pName] = (cults[pName] || 0) + e.amount; }
+        const pName = e.culture || 'Général / Non défini'; const d = new Date(e.date), fDate = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : e.date; 
+        const isRemb = e.type === 'remboursement';
+        list.innerHTML += `<li class="expense-item"><div class="item-left"><div class="item-cat-row"><span class="item-cat">${e.category}</span> <span class="badge badge-${e.type}">${isRemb ? 'Remb. Dette' : e.type}</span></div><span class="item-sub">📍 ${pName} • ${fDate}</span>${e.description ? `<span class="item-desc">${e.description}</span>` : ''}</div><div class="item-right"><span class="item-amount ${isRemb?'payback-amt':''}">${isRemb?'-':''}${e.amount.toFixed(2)} Dhs</span><div class="action-btns"><button class="edit-btn" onclick="startEdit(${e.id})">Mod.</button><button class="delete-btn" onclick="deleteExpense(${e.id})">Suppr.</button></div></div></li>`; 
+    });
+    if(filtered.length === 0) list.innerHTML = '<li style="text-align:center;color:#999;padding:10px 0;font-size:0.8rem;">Aucune transaction.</li>';
+    brk.innerHTML = '<div class="summary-title">[Par Rubrique (Hors Remb.)]</div>' + Object.entries(rubrics).map(([k,v]) => `<div class="summary-row"><span>${k}</span><span>${v.toFixed(2)} Dhs</span></div>`).join('') + '<div class="summary-title" style="margin-top:8px;">[Par Parcelle]</div>' + Object.entries(cults).map(([k,v]) => `<div class="summary-row"><span>${k}</span><span>${v.toFixed(2)} Dhs</span></div>`).join('') + `<div class="summary-row"><span>TOTAL CHARGES :</span><span>${gTotal.toFixed(2)} Dhs</span></div>`;
+}
+function updateDashUI() { 
+    let tc = 0, tcr = 0; 
+    expenses.forEach(e => { if(e.type === 'espèces') tc += e.amount; else if(e.type === 'crédit') tcr += e.amount; else if(e.type === 'remboursement') { tcr -= e.amount; tc += e.amount; } }); 
+    const cEl = document.getElementById('dashCash'), crEl = document.getElementById('dashCredit');
+    if(cEl) cEl.textContent = tc.toFixed(2) + ' Dhs'; if(crEl) crEl.textContent = tcr.toFixed(2) + ' Dhs'; 
+}
+function exportToExcel() {
+    if(expenses.length === 0) { alert("Aucune donnée à exporter."); return; }
+    const mapped = expenses.map(e => ({ "ID Unique (Ne pas modifier)": e.id, "Date": e.date, "Catégorie": e.category, "Parcelle / Culture": e.culture || "Général / Non défini", "Note": e.description || "", "Mode de Paiement": e.type, "Montant (Dhs)": e.amount }));
+    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(mapped); XLSX.utils.book_append_sheet(wb, ws, "Backup_Journal");
+    XLSX.writeFile(wb, `AgriCharges_Backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+}
+function importFromExcel(event) {
+    const file = event.target.files[0]; if(!file) return;
+    const reader = new FileReader(); reader.onload = function(e) {
+        try {
+            const workbook = XLSX.read(e.target.result, { type: 'binary' }), sheetName = workbook.SheetNames[0], sheet = workbook.Sheets[sheetName];
+            const data = XLSX.utils.sheet_to_json(sheet); if(data.length === 0) throw new Error();
+            let newExps = [], loadedCats = new Set(catsList), loadedCults = new Set(cultsList), loadedNotes = new Set(notesList);
+            data.forEach(row => {
+                let id = parseInt(row["ID Unique (Ne pas modifier)"]) || Date.now() + Math.random();
+                let cat = row["Catégorie"], cult = row["Parcelle / Culture"], type = row["Mode de Paiement"], amt = parseFloat(row["Montant (Dhs)"]), dt = row["Date"], note = row["Note"] || "";
+                if(cat && type && !isNaN(amt) && dt) {
+                    newExps.push({ id: id, date: dt, category: cat, culture: cult, description: note, type: type, amount: amt });
+                    loadedCats.add(cat); loadedCults.add(cult); if(note) loadedNotes.add(note);
+                }
+            });
+            if(newExps.length > 0) {
+                expenses = newExps; catsList = Array.from(loadedCats); cultsList = Array.from(loadedCults); notesList = Array.from(loadedNotes);
+                localStorage.setItem('agri_exp_v2', JSON.stringify(expenses)); localStorage.setItem('agri_cats_list', JSON.stringify(catsList)); localStorage.setItem('agri_cults_list', JSON.stringify(cultsList)); localStorage.setItem('agri_notes_list', JSON.stringify(notesList));
+                alert(`🎯 Restauration réussie ! ${expenses.length} transactions chargées.`); refreshDropdowns(); updateDashUI(); updateHistoryUI();
+            } else { alert("Le fichier ne contient pas le bon format."); }
+        } catch(err) { alert("Erreur lors de la lecture du fichier Excel. Vérifiez le format."); }
+    };
+    reader.readAsBinaryString(file); event.target.value = '';
+}
+function deleteExpense(id) { if(confirm("Supprimer cette transaction ?")) { expenses = expenses.filter(e => e.id !== id); localStorage.setItem('agri_exp_v2', JSON.stringify(expenses)); updateDashUI(); updateHistoryUI(); } }
+function startEdit(id) {
+    const e = expenses.find(x => x.id === id); if(!e) return;
+    document.getElementById('editId').value = e.id; document.getElementById('categorySelect').value = e.category; document.getElementById('amount').value = e.amount; document.getElementById('date').value = e.date; document.getElementById('description').value = e.description || ''; document.getElementById('cultureSelect').value = e.culture || 'Général / Non défini'; document.getElementById('formTitle').textContent = "Modifier la transaction";
+    document.getElementById('isPayback').checked = (e.type === 'remboursement'); togglePaybackMode(); document.getElementById('normalButtons').style.display = 'none'; document.getElementById('editButtons').style.display = 'block'; switchTab('saisie');
+}
+function cancelEdit() { document.getElementById('editId').value = ""; document.getElementById('formTitle').textContent = "Nouvelle transaction"; document.getElementById('chargeForm').reset(); document.getElementById('date').value = new Date().toISOString().split('T')[0]; document.getElementById('newCatName').style.display = 'none'; document.getElementById('newCultureName').style.display = 'none'; document.getElementById('isPayback').checked = false; togglePaybackMode(); document.getElementById('normalButtons').style.display = 'grid'; document.getElementById('editButtons').style.display = 'none'; }
+function saveDocument(event) {
+    event.preventDefault(); const fileInput = document.getElementById('docFile'), dateInput = document.getElementById('docDate'), descInput = document.getElementById('docDesc'); if(!fileInput.files[0]) return;
+    const reader = new FileReader(); reader.onload = function(e) { const transaction = db.transaction(["images"], "readwrite"), store = transaction.objectStore("images"); store.add({ image: e.target.result, date: dateInput.value, description: descInput.value }); transaction.oncomplete = function() { document.getElementById('docForm').reset(); document.getElementById('docDate').value = new Date().toISOString().split('T')[0]; loadDocuments(); }; }; reader.readAsDataURL(fileInput.files[0]);
+}
+function loadDocuments() {
+    if(!db) return; const grid = document.getElementById('documentGrid'); grid.innerHTML = ''; const transaction = db.transaction(["images"], "readonly"), store = transaction.objectStore("images");
+    store.openCursor().onsuccess = function(e) { const cursor = e.target.result; if(cursor) { const val = cursor.value, d = new Date(val.date), fDate = !isNaN(d.getTime()) ? d.toLocaleDateString('fr-FR') : val.date; grid.innerHTML += `<div class="doc-card"><button class="doc-del" onclick="deleteDocument(${val.id})">×</button><img src="${val.image}" class="doc-img" onclick="window.open('${val.image}')"><div class="doc-info"><span class="doc-text" title="${val.description}">${val.description}</span><span class="doc-date">${fDate}</span></div></div>`; cursor.continue(); } };
+}
+function deleteDocument(id) { if(confirm("Supprimer ce document ?")) { const transaction = db.transaction(["images"], "readwrite"), store = transaction.objectStore("images"); store.delete(id); transaction.oncomplete = function() { loadDocuments(); }; } }
+refreshDropdowns(); updateDashUI(); updateHistoryUI();
+</script>
+</body>
+</html>

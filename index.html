@@ -268,53 +268,549 @@ function updateDashUI() {
     const cEl = document.getElementById('dashCash'), crEl = document.getElementById('dashCredit');
     if(cEl) cEl.textContent = tc.toFixed(2) + ' Dhs'; if(crEl) crEl.textContent = tcr.toFixed(2) + ' Dhs'; 
 }
+// ─────────────────────────────────────────────────────────────────
+// EXPORT EXCEL PREMIUM — Journal + Récapitulatif + Guide Import
+// ─────────────────────────────────────────────────────────────────
 function exportToExcel() {
-    if(expenses.length === 0) { alert("Aucune donnée à exporter."); return; }
-    const mapped = expenses.map(e => ({ "ID Unique (Ne pas modifier)": e.id, "Date": e.date, "Catégorie": e.category, "Parcelle / Culture": e.culture || "Général / Non défini", "Note": e.description || "", "Mode de Paiement": e.type, "Montant (Dhs)": e.amount }));
-    const wb = XLSX.utils.book_new(), ws = XLSX.utils.json_to_sheet(mapped); XLSX.utils.book_append_sheet(wb, ws, "Backup_Journal");
-    
-    const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'binary' });
+    if (expenses.length === 0) { alert("Aucune donnée à exporter."); return; }
+
+    const wb = XLSX.utils.book_new();
+    const PERIODE_MAP = {
+        "01":"❄ Hiver","02":"❄ Hiver","03":"🌱 Semis","04":"🌱 Semis",
+        "05":"☀ Croissance","06":"☀ Croissance","07":"🌾 Récolte",
+        "08":"🌾 Récolte","09":"🍂 Post-récolte","10":"🍂 Post-récolte",
+        "11":"🌱 Semis","12":"❄ Hiver"
+    };
+    const MODE_ICON = { "espèces":"💵 Espèces", "crédit":"💳 Crédit", "remboursement":"🔄 Remboursement" };
+
+    // ── Couleurs réutilisables ──
+    const C = {
+        vertNuit:"0D3320", vertFonce:"1A5C38", vertMid:"2E7D52",
+        vertClair:"C8E6C9", vertPale:"F1F8F4",
+        or:"C8960C", orPale:"FFF8E1", orMid:"FFE082",
+        bleu:"0277BD", bleuPale:"E3F2FD",
+        orange:"E65100", orangePale:"FFF3E0",
+        rouge:"B71C1C", rougePale:"FFEBEE",
+        teal:"00695C", tealPale:"E0F2F1",
+        grisFonce:"37474F", grisMid:"90A4AE", grisPale:"ECEFF1",
+        blanc:"FFFFFF", noir:"1A1A1A"
+    };
+
+    function mkFill(rgb) { return { patternType:"solid", fgColor:{ rgb } }; }
+    function mkFont(rgb, bold=false, sz=10, italic=false) {
+        return { color:{ rgb }, bold, sz, name:"Calibri", italic };
+    }
+    function mkBorder(color="DDDDDD") {
+        const s = { style:"thin", color:{ rgb:color } };
+        return { top:s, bottom:s, left:s, right:s };
+    }
+    function mkBorderBottom(color="DDDDDD") {
+        return { bottom:{ style:"thin", color:{ rgb:color } } };
+    }
+    function mkAlign(horizontal="left", vertical="center", wrapText=false) {
+        return { horizontal, vertical, wrapText };
+    }
+
+    // ════════════════════════════════
+    // FEUILLE 1 — JOURNAL
+    // ════════════════════════════════
+    const sorted = [...expenses].sort((a, b) => a.date.localeCompare(b.date));
+    const journalData = [];
+
+    // Ligne 1 : bandeau titre (sera merged côté style)
+    journalData.push([
+        "🌿 AGRIMANAGER PREMIUM  ·  Journal des Charges d'Exploitation",
+        "","","","","","","",""
+    ]);
+    // Ligne 2 : sous-titre
+    journalData.push(["Campagne agricole 2025  ·  Suivi financier en temps réel","","","","","","","",""]);
+    // Ligne 3 : vide
+    journalData.push(["","","","","","","","",""]);
+    // Ligne 4 : en-têtes
+    journalData.push(["N°","Date","Période","Catégorie","Parcelle","Note","Paiement","Montant (Dhs)","Solde Crédit (Dhs)"]);
+
+    let creditRunning = 0;
+    sorted.forEach((e, i) => {
+        const mois = (e.date || "").slice(5, 7);
+        const periode = PERIODE_MAP[mois] || "—";
+        const modeLabel = MODE_ICON[e.type] || e.type;
+        if (e.type === "crédit") creditRunning += e.amount;
+        else if (e.type === "remboursement") creditRunning -= e.amount;
+        journalData.push([
+            String(i + 1).padStart(2, "0"),
+            e.date,
+            periode,
+            e.category,
+            e.culture || "Général / Non défini",
+            e.description || "",
+            modeLabel,
+            e.amount,
+            creditRunning
+        ]);
+    });
+
+    // Ligne TOTAL
+    const dataStartRow = 5, dataEndRow = 4 + sorted.length;
+    journalData.push([
+        "TOTAL CHARGES NETTES (hors remboursements)",
+        "","","","","","",
+        { f: `SUMPRODUCT((LEFT(G${dataStartRow}:G${dataEndRow},1)<>"🔄")*(H${dataStartRow}:H${dataEndRow}))` },
+        ""
+    ]);
+
+    const wsJ = XLSX.utils.aoa_to_sheet(journalData);
+
+    // Largeurs colonnes
+    wsJ['!cols'] = [
+        {wch:5},{wch:13},{wch:15},{wch:22},{wch:18},{wch:30},{wch:18},{wch:16},{wch:16}
+    ];
+
+    // Hauteurs de lignes
+    wsJ['!rows'] = [
+        {hpt:36},{hpt:16},{hpt:6},{hpt:24},
+        ...sorted.map(() => ({hpt:18})),
+        {hpt:26}
+    ];
+
+    // Gel volets : ligne 5
+    wsJ['!freeze'] = { xSplit:0, ySplit:4 };
+
+    // Fusions
+    wsJ['!merges'] = [
+        {s:{r:0,c:0}, e:{r:0,c:8}},
+        {s:{r:1,c:0}, e:{r:1,c:8}},
+        {s:{r:2,c:0}, e:{r:2,c:8}},
+        {s:{r:journalData.length-1,c:0}, e:{r:journalData.length-1,c:6}}
+    ];
+
+    // ── Styles cellule par cellule ──
+    function cellAddr(r, c) {
+        return XLSX.utils.encode_cell({r, c});
+    }
+    function applyStyle(ws, addr, style) {
+        if (!ws[addr]) ws[addr] = { t:'z', v:'' };
+        ws[addr].s = style;
+    }
+
+    const MODE_COLORS = {
+        "💵 Espèces":       { bg: C.bleuPale,    fg: C.bleu },
+        "💳 Crédit":        { bg: C.orangePale,   fg: C.orange },
+        "🔄 Remboursement": { bg: C.tealPale,     fg: C.teal },
+    };
+    const PERIODE_COLORS = {
+        "🌱 Semis":         { bg:"F1F8E9", fg:"33691E" },
+        "☀ Croissance":     { bg:"FFFDE7", fg:"F57F17" },
+        "🌾 Récolte":       { bg:"FFF8E1", fg:C.or },
+        "🍂 Post-récolte":  { bg:"EFEBE9", fg:"4E342E" },
+        "❄ Hiver":          { bg:C.bleuPale, fg:C.bleu },
+    };
+
+    // Titre ligne 1
+    const addr1 = cellAddr(0,0);
+    if (wsJ[addr1]) wsJ[addr1].s = {
+        fill: mkFill(C.vertNuit), font: mkFont(C.or, true, 14),
+        alignment: mkAlign("left","center")
+    };
+    // Sous-titre ligne 2
+    const addr2 = cellAddr(1,0);
+    if (wsJ[addr2]) wsJ[addr2].s = {
+        fill: mkFill(C.vertNuit), font: mkFont(C.grisMid, false, 9, true),
+        alignment: mkAlign("left","center")
+    };
+
+    // En-têtes ligne 4 (row index 3)
+    for (let c = 0; c < 9; c++) {
+        const a = cellAddr(3, c);
+        if (!wsJ[a]) wsJ[a] = {t:'s', v:''};
+        wsJ[a].s = {
+            fill: mkFill(C.vertFonce),
+            font: mkFont(C.blanc, true, 9),
+            alignment: mkAlign("center","center"),
+            border: { bottom:{ style:"medium", color:{ rgb:C.or } } }
+        };
+    }
+
+    // Données
+    sorted.forEach((e, i) => {
+        const r = 4 + i;
+        const rowBg = i % 2 === 0 ? C.vertPale : C.blanc;
+        const modeLabel = MODE_ICON[e.type] || e.type;
+        const modeColor = MODE_COLORS[modeLabel] || { bg: rowBg, fg: C.noir };
+        const mois = (e.date || "").slice(5, 7);
+        const periode = PERIODE_MAP[mois] || "—";
+        const perColor = PERIODE_COLORS[periode] || { bg: rowBg, fg: C.grisFonce };
+
+        // Solde crédit couleur dégradée
+        let scFg, scBg;
+        const sc = wsJ[cellAddr(r,8)] ? Number(wsJ[cellAddr(r,8)].v) : 0;
+        // Recalcul local pour couleur
+        let localCredit = 0;
+        sorted.slice(0, i+1).forEach(x => {
+            if(x.type==="crédit") localCredit += x.amount;
+            else if(x.type==="remboursement") localCredit -= x.amount;
+        });
+        if (localCredit <= 2000)      { scFg = C.teal;   scBg = C.tealPale; }
+        else if (localCredit <= 5000) { scFg = C.orange;  scBg = C.orangePale; }
+        else                           { scFg = C.rouge;   scBg = C.rougePale; }
+
+        const colStyles = [
+            { bg: rowBg,        fg: C.grisMid,  bold:false, align:"center" },  // N°
+            { bg: rowBg,        fg: C.grisFonce, bold:false, align:"center" },  // Date
+            { bg: perColor.bg,  fg: perColor.fg, bold:true,  align:"center" },  // Période
+            { bg: rowBg,        fg: C.noir,      bold:true,  align:"left"   },  // Catégorie
+            { bg: rowBg,        fg: C.grisFonce, bold:false, align:"left"   },  // Parcelle
+            { bg: rowBg,        fg: C.grisFonce, bold:false, align:"left"   },  // Note
+            { bg:modeColor.bg,  fg:modeColor.fg, bold:true,  align:"center" },  // Paiement
+            { bg: rowBg,        fg: e.type==="remboursement"?C.teal:C.noir, bold:true, align:"right" }, // Montant
+            { bg: scBg,         fg: scFg,        bold:true,  align:"right"  },  // Solde crédit
+        ];
+        colStyles.forEach((cs, c) => {
+            const a = cellAddr(r, c);
+            if (!wsJ[a]) wsJ[a] = {t:'z', v:''};
+            wsJ[a].s = {
+                fill: mkFill(cs.bg),
+                font: mkFont(cs.fg, cs.bold, 9),
+                alignment: mkAlign(cs.align, "center"),
+                border: mkBorderBottom(i%2===0 ? C.vertClair : "EEEEEE")
+            };
+            if (c === 7 || c === 8) {
+                wsJ[a].t = 'n';
+                wsJ[a].z = '#,##0.00 "Dhs"';
+            }
+        });
+    });
+
+    // Ligne TOTAL
+    const totR = 4 + sorted.length;
+    for (let c = 0; c < 9; c++) {
+        const a = cellAddr(totR, c);
+        if (!wsJ[a]) wsJ[a] = {t:'z',v:''};
+        wsJ[a].s = {
+            fill: mkFill(C.vertNuit),
+            font: mkFont(c===7 ? C.or : C.or, true, c===7?11:10),
+            alignment: mkAlign(c===0?"left":"right","center"),
+            border: { top:{ style:"medium", color:{ rgb:C.or } } }
+        };
+        if (c === 7) wsJ[a].z = '#,##0.00 "Dhs"';
+    }
+
+    XLSX.utils.book_append_sheet(wb, wsJ, "📋 Journal");
+
+    // ════════════════════════════════
+    // FEUILLE 2 — RÉCAPITULATIF
+    // ════════════════════════════════
+    const J = "'📋 Journal'";
+    const DR = `${dataStartRow}:${dataEndRow}`; // plage données journal
+
+    // Calculs locaux pour les barres (pas de formules dans les barres de texte)
+    function sumByField(field, value, excludeRemb=true) {
+        return expenses
+            .filter(e => e[field] === value && (!excludeRemb || e.type !== "remboursement"))
+            .reduce((s, e) => s + e.amount, 0);
+    }
+    const totalEspeces    = expenses.filter(e=>e.type==="espèces").reduce((s,e)=>s+e.amount,0);
+    const totalCredit     = expenses.filter(e=>e.type==="crédit").reduce((s,e)=>s+e.amount,0);
+    const totalRemb       = expenses.filter(e=>e.type==="remboursement").reduce((s,e)=>s+e.amount,0);
+    const totalNet        = expenses.filter(e=>e.type!=="remboursement").reduce((s,e)=>s+e.amount,0);
+    const soldeCreditNet  = totalCredit - totalRemb;
+
+    function makeBar(val, max, char="█", width=20) {
+        const n = Math.min(width, Math.round((val / (max||1)) * width));
+        return char.repeat(Math.max(0,n));
+    }
+
+    const recap = [];
+    // Titre
+    recap.push(["📊 TABLEAU DE BORD  ·  AgriManager Premium","","","","","",""]);
+    recap.push(["Toutes les valeurs se mettent à jour automatiquement depuis le Journal","","","","","",""]);
+    recap.push(["","","","","","",""]);
+
+    // Section KPIs
+    recap.push(["💰 SOLDE FINANCIER GLOBAL","","","","","",""]);
+    const kpiMax = Math.max(totalEspeces, totalCredit, totalNet);
+    const kpis = [
+        ["💵 Total Espèces décaissées",    totalEspeces,    makeBar(totalEspeces,   kpiMax,"█"), "espèces"],
+        ["💳 Total engagé à Crédit",       totalCredit,     makeBar(totalCredit,    kpiMax,"█"), "crédit"],
+        ["🔄 Total Remboursements",         totalRemb,       makeBar(totalRemb,      kpiMax,"█"), "remboursement"],
+        ["⚖️ Solde Crédit NET restant dû",  soldeCreditNet,  makeBar(soldeCreditNet, kpiMax,"▓"), "net"],
+        ["📦 TOTAL CHARGES NETTES",        totalNet,        makeBar(totalNet,        kpiMax,"█"), "total"],
+    ];
+    kpis.forEach(([label, val, bar]) => recap.push([label, val, bar, "","","",""]));
+
+    recap.push(["","","","","","",""]);
+
+    // Par catégorie
+    const allCats = [...new Set(expenses.filter(e=>e.type!=="remboursement").map(e=>e.category))];
+    const catTotals = allCats.map(c => [c, sumByField("category",c)]);
+    catTotals.sort((a,b)=>b[1]-a[1]);
+    const catMax = Math.max(...catTotals.map(x=>x[1]), 1);
+
+    recap.push(["📂 PAR CATÉGORIE / FOURNISSEUR","Montant","Répartition visuelle","","📍 PAR PARCELLE / CULTURE","Montant","Répartition visuelle"]);
+
+    const allCults = [...new Set(expenses.filter(e=>e.type!=="remboursement").map(e=>e.culture||"Général / Non défini"))];
+    const cultTotals = allCults.map(c => [c, sumByField("culture",c)]);
+    cultTotals.sort((a,b)=>b[1]-a[1]);
+    const cultMax = Math.max(...cultTotals.map(x=>x[1]), 1);
+
+    const maxRows = Math.max(catTotals.length, cultTotals.length);
+    for (let i = 0; i < maxRows; i++) {
+        const [catLabel, catVal] = catTotals[i] || ["",""];
+        const [cultLabel, cultVal] = cultTotals[i] || ["",""];
+        recap.push([
+            catLabel,
+            catVal || "",
+            catVal ? makeBar(catVal, catMax, "▪", 25) : "",
+            "",
+            cultLabel,
+            cultVal || "",
+            cultVal ? makeBar(cultVal, cultMax, "▪", 25) : "",
+        ]);
+    }
+    // Totaux
+    recap.push([
+        "TOTAL", catTotals.reduce((s,x)=>s+x[1],0), "", "",
+        "TOTAL", cultTotals.reduce((s,x)=>s+x[1],0), ""
+    ]);
+
+    recap.push(["","","","","","",""]);
+
+    // Par période agronomique
+    recap.push(["🗓 RÉPARTITION PAR PÉRIODE AGRONOMIQUE","Montant","Part %","Répartition visuelle","","",""]);
+    const periodeOrder = ["🌱 Semis","☀ Croissance","🌾 Récolte","🍂 Post-récolte","❄ Hiver"];
+    const periodeMoisLabel = {
+        "🌱 Semis":"Mars–Avr & Nov","☀ Croissance":"Mai–Juin",
+        "🌾 Récolte":"Juil–Août","🍂 Post-récolte":"Sept–Oct","❄ Hiver":"Nov–Fév"
+    };
+    const periodeTotals = {};
+    expenses.filter(e=>e.type!=="remboursement").forEach(e => {
+        const mois = (e.date||"").slice(5,7);
+        const p = PERIODE_MAP[mois] || "—";
+        periodeTotals[p] = (periodeTotals[p]||0) + e.amount;
+    });
+    const periodeMax = Math.max(...Object.values(periodeTotals), 1);
+    periodeOrder.forEach(p => {
+        const val = periodeTotals[p] || 0;
+        const pct = totalNet > 0 ? (val/totalNet*100).toFixed(1)+"%" : "0%";
+        recap.push([p, val, pct, makeBar(val, periodeMax, "█", 25), "","",""]);
+    });
+
+    recap.push(["","","","","","",""]);
+    recap.push(["ℹ  Modifiez le Journal → ce tableau se recalcule instantanément.","","","","","",""]);
+
+    const wsR = XLSX.utils.aoa_to_sheet(recap);
+    wsR['!cols'] = [{wch:32},{wch:16},{wch:30},{wch:4},{wch:28},{wch:16},{wch:30}];
+
+    // Styles récap
+    const KPIBGS = {
+        "espèces":      { bg:C.bleuPale,    fg:C.bleu    },
+        "crédit":       { bg:C.orangePale,   fg:C.orange  },
+        "remboursement":{ bg:C.tealPale,     fg:C.teal    },
+        "net":          { bg:"FFF8E1",       fg:C.or      },
+        "total":        { bg:C.vertPale,     fg:C.vertFonce},
+    };
+    // Titre
+    const rT = cellAddr(0,0);
+    if (wsR[rT]) wsR[rT].s = { fill:mkFill(C.vertNuit), font:mkFont(C.or,true,14), alignment:mkAlign("left","center") };
+    const rS = cellAddr(1,0);
+    if (wsR[rS]) wsR[rS].s = { fill:mkFill(C.vertNuit), font:mkFont(C.grisMid,false,9,true), alignment:mkAlign("left","center") };
+
+    // En-tête section KPIs (row 3)
+    const rKH = cellAddr(3,0);
+    if (wsR[rKH]) wsR[rKH].s = {
+        fill:mkFill(C.vertFonce), font:mkFont(C.blanc,true,10),
+        alignment:mkAlign("left","center"),
+        border:{ bottom:{style:"medium",color:{rgb:C.or}} }
+    };
+
+    // KPI rows (rows 4–8)
+    kpis.forEach(([,, , key], i) => {
+        const r = 4 + i;
+        const cs = KPIBGS[key];
+        const bold = key==="total"||key==="net";
+        [0,1,2].forEach(c => {
+            const a = cellAddr(r,c);
+            if (!wsR[a]) wsR[a]={t:'z',v:''};
+            wsR[a].s = {
+                fill:mkFill(cs.bg), font:mkFont(cs.fg, bold, bold?11:9),
+                alignment:mkAlign(c===0?"left":"right","center"),
+                border:mkBorderBottom()
+            };
+            if (c===1) wsR[a].z='#,##0.00 "Dhs"';
+            if (c===2) wsR[a].s.font = mkFont(cs.fg,false,8);
+        });
+        if (wsR[cellAddr(r,0)]) wsR[cellAddr(r,0)].s.alignment = mkAlign("left","center");
+    });
+
+    XLSX.utils.book_append_sheet(wb, wsR, "📊 Récapitulatif");
+
+    // ════════════════════════════════
+    // FEUILLE 3 — GUIDE IMPORT
+    // ════════════════════════════════
+    const guide = [
+        ["📥 GUIDE D'IMPORT  ·  Format accepté pour la restauration","","","","",""],
+        ["Colonnes dans n'importe quel ordre · ID optionnel · Lignes vides ignorées · Variantes de noms tolérées","","","","",""],
+        [""],
+        ["Nom de colonne attendu","Obligatoire ?","Format","Si absent","Exemple",""],
+        ["Date",                "✅ Oui","AAAA-MM-JJ","Ligne ignorée","2025-05-15",""],
+        ["Catégorie",           "✅ Oui","Texte libre","Ligne ignorée","Semences",""],
+        ["Mode de Paiement",    "✅ Oui","espèces / crédit / remboursement","Ligne ignorée","crédit",""],
+        ["Montant (Dhs)",       "✅ Oui","Nombre décimal","Ligne ignorée","1200.00",""],
+        ["Parcelle / Culture",  "❌ Non","Texte libre","Général / Non défini","Parcelle A",""],
+        ["Note",                "❌ Non","Texte libre","Vide","Blé tendre Arrar",""],
+        ["ID Unique",           "❌ Non","Nombre entier","Généré auto","1001",""],
+        [""],
+        ["✅ EXEMPLE DE FICHIER VALIDE POUR IMPORT","","","","",""],
+        ["Date","Catégorie","Parcelle / Culture","Note","Mode de Paiement","Montant (Dhs)"],
+        ["2025-06-01","Engrais","Parcelle A","Urée 46%","crédit","850"],
+        ["2025-06-05","Main d'œuvre","Parcelle B","Récolte x5","espèces","600"],
+        ["2025-06-10","Carburant","Général","Remb. partiel","remboursement","400"],
+    ];
+    const wsG = XLSX.utils.aoa_to_sheet(guide);
+    wsG['!cols'] = [{wch:28},{wch:14},{wch:32},{wch:22},{wch:20},{wch:6}];
+    const rGT = cellAddr(0,0);
+    if (wsG[rGT]) wsG[rGT].s={ fill:mkFill(C.vertNuit), font:mkFont(C.or,true,13), alignment:mkAlign("left","center") };
+
+    XLSX.utils.book_append_sheet(wb, wsG, "📥 Guide Import");
+
+    // ── Téléchargement ──
+    const wbout = XLSX.write(wb, { bookType:'xlsx', type:'binary', cellStyles:true });
     function s2ab(s) {
         const buf = new ArrayBuffer(s.length);
         const view = new Uint8Array(buf);
         for (let i = 0; i < s.length; i++) view[i] = s.charCodeAt(i) & 0xFF;
         return buf;
     }
-    const blob = new Blob([s2ab(wbout)], { type: "application/octet-stream" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
+    const blob = new Blob([s2ab(wbout)], { type:"application/octet-stream" });
+    const url  = window.URL.createObjectURL(blob);
+    const a    = document.createElement("a");
     document.body.appendChild(a);
-    a.style = "display: none";
-    a.href = url;
-    a.download = `AgriCharges_Backup_${new Date().toISOString().split('T')[0]}.xlsx`;
+    a.style = "display:none";
+    a.href  = url;
+    a.download = `AgriManager_${new Date().toISOString().split('T')[0]}.xlsx`;
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// IMPORT FLEXIBLE — lecture par nom de colonne, tolérant aux modifs
+// ─────────────────────────────────────────────────────────────────
 function importFromExcel(event) {
-    const file = event.target.files[0]; if(!file) return;
-    const reader = new FileReader(); reader.onload = function(e) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
         try {
-            const workbook = XLSX.read(e.target.result, { type: 'binary' }), sheetName = workbook.SheetNames[0], sheet = workbook.Sheets[sheetName];
-            const data = XLSX.utils.sheet_to_json(sheet); if(data.length === 0) throw new Error();
-            let newExps = [], loadedCats = new Set(catsList), loadedCults = new Set(cultsList), loadedNotes = new Set(notesList);
-            data.forEach(row => {
-                let id = parseInt(row["ID Unique (Ne pas modifier)"]) || Date.now() + Math.random();
-                let cat = row["Catégorie"], cult = row["Parcelle / Culture"], type = row["Mode de Paiement"], amt = parseFloat(row["Montant (Dhs)"]), dt = row["Date"], note = row["Note"] || "";
-                if(cat && type && !isNaN(amt) && dt) {
-                    newExps.push({ id: id, date: dt, category: cat, culture: cult, description: note, type: type, amount: amt });
-                    loadedCats.add(cat); loadedCults.add(cult); if(note) loadedNotes.add(note);
+            const workbook  = XLSX.read(e.target.result, { type:'binary' });
+
+            // Cherche la feuille Journal en priorité, sinon prend la première
+            const sheetName = workbook.SheetNames.find(n => n.includes("Journal"))
+                           || workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            const raw   = XLSX.utils.sheet_to_json(sheet, { defval:"" });
+
+            if (raw.length === 0) throw new Error("Fichier vide");
+ // ── Résolution flexible des noms de colonnes ──
+            function findKey(row, candidates) {
+                const keys = Object.keys(row).map(k => k.trim().toLowerCase());
+                for (const cand of candidates) {
+                    const idx = keys.findIndex(k => k.includes(cand.toLowerCase()));
+                    if (idx !== -1) return Object.keys(row)[idx];
                 }
+                return null;
+            }
+
+            const firstRow = raw[0];
+            const KEY = {
+                id:    findKey(firstRow, ["id unique","id"]),
+                date:  findKey(firstRow, ["date"]),
+                cat:   findKey(firstRow, ["catégorie","categorie","categ","fournisseur"]),
+                cult:  findKey(firstRow, ["parcelle","culture"]),
+                note:  findKey(firstRow, ["note","détail","detail","description"]),
+                mode:  findKey(firstRow, ["mode","paiement","payment","type"]),
+                amt:   findKey(firstRow, ["montant","amount","dhs"]),
+            };
+
+            // ── Normalisation du mode de paiement ──
+            function normalizeMode(val) {
+                if (!val) return null;
+                const v = String(val).toLowerCase().replace(/[^a-zàâéèêëîïôùûü]/g,"");
+                if (v.includes("esp") || v.includes("cash")) return "espèces";
+                if (v.includes("remb"))                       return "remboursement";
+                if (v.includes("cred") || v.includes("créd")) return "crédit";
+                return null;
+            }
+
+            // ── Parsing ──
+            let newExps = [];
+            let loadedCats  = new Set(catsList);
+            let loadedCults = new Set(cultsList);
+            let loadedNotes = new Set(notesList);
+            let skipped = 0;
+
+            raw.forEach((row, idx) => {
+                // Ignore lignes d'en-tête parasites ou vides
+                const rawAmt  = KEY.amt  ? row[KEY.amt]  : null;
+                const rawDate = KEY.date ? row[KEY.date] : null;
+                const rawCat  = KEY.cat  ? row[KEY.cat]  : null;
+                const rawMode = KEY.mode ? row[KEY.mode] : null;
+
+                const amt  = parseFloat(String(rawAmt).replace(",","."));
+                const dt   = String(rawDate||"").trim();
+                const cat  = String(rawCat||"").trim();
+                const mode = normalizeMode(rawMode);
+
+                // Validation minimale
+                if (!cat || !mode || isNaN(amt) || amt <= 0 || !dt.match(/\d{4}-\d{2}-\d{2}/)) {
+                    skipped++;
+                    return;
+                }
+
+                const cult = String(KEY.cult ? row[KEY.cult] : "").trim() || "Général / Non défini";
+                const note = String(KEY.note ? row[KEY.note] : "").trim();
+                const id   = KEY.id ? parseInt(row[KEY.id]) || Date.now() + Math.random()
+                                    : Date.now() + Math.random() + idx;
+
+                newExps.push({ id, date:dt, category:cat, culture:cult, description:note, type:mode, amount:amt });
+                loadedCats.add(cat);
+                loadedCults.add(cult);
+                if (note) loadedNotes.add(note);
             });
-            if(newExps.length > 0) {
-                expenses = newExps; catsList = Array.from(loadedCats); cultsList = Array.from(loadedCults); notesList = Array.from(loadedNotes);
-                localStorage.setItem('agri_exp_v2', JSON.stringify(expenses)); localStorage.setItem('agri_cats_list', JSON.stringify(catsList)); localStorage.setItem('agri_cults_list', JSON.stringify(cultsList)); localStorage.setItem('agri_notes_list', JSON.stringify(notesList));
-                alert(`🎯 Restauration réussie ! ${expenses.length} transactions chargées.`); refreshDropdowns(); updateDashUI(); updateHistoryUI();
-            } else { alert("Le fichier ne contient pas le bon format."); }
-        } catch(err) { alert("Erreur lors de la lecture du fichier Excel. Vérifiez le format."); }
+
+            if (newExps.length === 0) {
+                alert("❌ Aucune ligne valide trouvée.\n\nVérifiez que le fichier contient bien les colonnes :\nDate · Catégorie · Mode de Paiement · Montant (Dhs)");
+                return;
+            }
+
+            // ── Sauvegarde ──
+            expenses   = newExps;
+            catsList   = Array.from(loadedCats);
+            cultsList  = Array.from(loadedCults);
+            notesList  = Array.from(loadedNotes);
+
+            localStorage.setItem('agri_exp_v2',      JSON.stringify(expenses));
+            localStorage.setItem('agri_cats_list',   JSON.stringify(catsList));
+            localStorage.setItem('agri_cults_list',  JSON.stringify(cultsList));
+            localStorage.setItem('agri_notes_list',  JSON.stringify(notesList));
+
+            const msg = skipped > 0
+                ? `✅ ${newExps.length} transactions chargées.\n⚠️ ${skipped} ligne(s) ignorée(s) (données manquantes ou en-têtes).`
+                : `✅ ${newExps.length} transactions chargées avec succès.`;
+
+            alert(msg);
+            refreshDropdowns();
+            updateDashUI();
+            updateHistoryUI();
+
+        } catch(err) {
+            alert("❌ Erreur lors de la lecture du fichier.\n\nAssurez-vous que c'est bien un fichier .xlsx et que les colonnes sont présentes.\n\nConsultez l'onglet 📥 Guide Import dans le fichier exporté.");
+        }
     };
-    reader.readAsBinaryString(file); event.target.value = '';
-}
+    reader.readAsBinaryString(file);
+    event.target.value = '';
+                }
+            
 function deleteExpense(id) { if(confirm("Supprimer cette transaction ?")) { expenses = expenses.filter(e => e.id !== id); localStorage.setItem('agri_exp_v2', JSON.stringify(expenses)); updateDashUI(); updateHistoryUI(); } }
 function startEdit(id) {
     const e = expenses.find(x => x.id === id); if(!e) return;

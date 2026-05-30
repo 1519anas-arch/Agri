@@ -681,8 +681,15 @@ function exportToExcel() {
         return buf;
     }
     const blob = new Blob([s2ab(wbout)], { type:"application/octet-stream" });
-    const url  = window.URL.createObjectURL(blob);
-        window.location.href = url;
+    const url = window.URL.createObjectURL(blob);
+const a = document.createElement("a");
+a.href = url;
+a.download = "Export_AgriManager.xlsx";
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+window.URL.revokeObjectURL(url);
+    
     setTimeout(function() {
         window.URL.revokeObjectURL(url);
     }, 1000);
